@@ -1,30 +1,196 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>FTube VPN</title>
     <style>
         body {
-            width: 200px;
-            padding: 10px;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            width: 650px;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+            color: #1c1e21;
         }
-
-        button {
-            width: 100%;
-            padding: 10px;
-            margin-top: 10px;
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1 {
+            color: #d32f2f;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 28px;
+        }
+        .vpn-toggle {
+            background-color: #4caf50; /* Зеленый цвет для выключенного состояния (когда нужно включить) */
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 24px;
+            font-size: 16px;
             cursor: pointer;
+            display: block;
+            width: 100%;
+            margin-bottom: 15px;
+            transition: background-color 0.3s;
+        }
+        .vpn-toggle.active {
+            background-color: #d32f2f;
+        }
+        .vpn-toggle:hover {
+            opacity: 0.9;
+        }
+        .vpn-status {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .info-item {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .info-label {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            background-color: #f5f5f5;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .tab {
+            flex: 1;
+            text-align: center;
+            padding: 12px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .tab:hover {
+            background-color: #e0e0e0;
+        }
+        .tab.active {
+            background-color: #d32f2f;
+            color: white;
+        }
+        .content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+        h2 {
+            margin-top: 0;
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        .site-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        .site-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .delete-btn {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .delete-btn:hover {
+            background-color: #d32f2f;
+        }
+        input[type="text"], input[type="password"] {
+            width: calc(100% - 24px);
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .add-btn {
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .add-btn:hover {
+            background-color: #45a049;
         }
     </style>
 </head>
-
 <body>
-    <h3>YouTube VPN Extension</h3>
-    <button id="toggleButton">Включить VPN</button>
+    <div class="container">
+        <h1>FTube VPN</h1>
+        <button id="vpnToggle" class="vpn-toggle">Включить VPN</button>
+        <div id="vpnStatus" class="vpn-status">VPN неактивен</div>
+        
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">Прокси-сервер:</div>
+                <div id="proxyInfo">Не установлен</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Скорость:</div>
+                <div id="speedInfo">0 Mbps</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Трафик за сессию:</div>
+                <div id="sessionTrafficInfo">0 MB</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Общий трафик:</div>
+                <div id="totalTrafficInfo">0 MB</div>
+            </div>
+        </div>
+        
+        <div class="tabs">
+            <div id="sitesTab" class="tab active">Сайты</div>
+            <div id="settingsTab" class="tab">Настройки</div>
+        </div>
+        
+        <div id="sitesContent" class="content">
+            <h2>Управление сайтами</h2>
+            <ul id="siteList" class="site-list"></ul>
+            <div>
+                <input type="text" id="newSite" placeholder="Введите домен сайта">
+                <button id="addSite" class="add-btn">Добавить</button>
+            </div>
+        </div>
+        
+        <div id="settingsContent" class="content" style="display:none;">
+            <h2>Настройки прокси</h2>
+            <input type="text" id="proxyHost" placeholder="Хост прокси">
+            <input type="text" id="proxyPort" placeholder="Порт прокси">
+            <input type="text" id="proxyUsername" placeholder="Имя пользователя (необязательно)">
+            <input type="password" id="proxyPassword" placeholder="Пароль (необязательно)">
+            <button id="saveProxySettings" class="add-btn">Сохранить настройки</button>
+        </div>
+    </div>
+    
     <script src="popup.js"></script>
 </body>
-
 </html>
