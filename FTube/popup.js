@@ -6,139 +6,205 @@ document.addEventListener('DOMContentLoaded', function() {
     const sessionTrafficInfo = document.getElementById('sessionTrafficInfo');
     const totalTrafficInfo = document.getElementById('totalTrafficInfo');
     const sitesTab = document.getElementById('sitesTab');
-    const settingsTab = document.getElementById('settingsTab');
+    const proxyTab = document.getElementById('proxyTab');
     const sitesContent = document.getElementById('sitesContent');
-    const settingsContent = document.getElementById('settingsContent');
+    const proxyContent = document.getElementById('proxyContent');
     const siteList = document.getElementById('siteList');
+    const proxyList = document.getElementById('proxyList');
     const newSite = document.getElementById('newSite');
     const addSite = document.getElementById('addSite');
     const proxyHost = document.getElementById('proxyHost');
     const proxyPort = document.getElementById('proxyPort');
     const proxyUsername = document.getElementById('proxyUsername');
     const proxyPassword = document.getElementById('proxyPassword');
-    const saveProxySettings = document.getElementById('saveProxySettings');
+    const addProxy = document.getElementById('addProxy');
+    const exportSites = document.getElementById('exportSites');
+    const importSites = document.getElementById('importSites');
+
+    let currentSites = [];
+    let currentProxyServers = [];
+    let currentActiveProxyIndex = -1;
 
     function updateUI() {
-        console.log("Обновление UI");
         chrome.runtime.sendMessage({action: "getVPNStatus"}, function(response) {
-            console.log("Получен статус VPN:", response);
             if (response) {
-                updateVpnButton(response.isEnabled);
-                vpnStatus.textContent = response.isEnabled ? 'VPN активен' : 'VPN неактивен';
-                proxyInfo.textContent = response.proxySettings ? `${response.proxySettings.host}:${response.proxySettings.port}` : 'Не установлен';
+                vpnToggle.textContent = response.isEnabled ? 'Disable VPN' : 'Enable VPN';
+                vpnToggle.classList.toggle('active', response.isEnabled);
+                vpnStatus.textContent = response.isEnabled ? 'VPN is active' : 'VPN is inactive';
+                proxyInfo.textContent = response.activeProxyIndex !== -1 && response.proxyServers[response.activeProxyIndex] 
+                    ? `${response.proxyServers[response.activeProxyIndex].host}:${response.proxyServers[response.activeProxyIndex].port}` 
+                    : 'Not set';
                 speedInfo.textContent = `${response.speed.toFixed(2)} Mbps`;
                 sessionTrafficInfo.textContent = `${response.sessionTraffic.toFixed(2)} MB`;
                 totalTrafficInfo.textContent = `${response.totalTraffic.toFixed(2)} MB`;
-                updateSiteList(response.sites);
-
-                if (response.proxySettings) {
-                    proxyHost.value = response.proxySettings.host || '';
-                    proxyPort.value = response.proxySettings.port || '';
-                    proxyUsername.value = response.proxySettings.username || '';
-                    proxyPassword.value = response.proxySettings.password || '';
-                }
+                currentSites = response.sites;
+                currentProxyServers = response.proxyServers;
+                currentActiveProxyIndex = response.activeProxyIndex;
+                updateSiteList();
+                updateProxyList();
             }
         });
     }
 
-    function updateVpnButton(isEnabled) {
-        if (isEnabled) {
-            vpnToggle.textContent = 'Выключить VPN';
-            vpnToggle.classList.add('active');
-        } else {
-            vpnToggle.textContent = 'Включить VPN';
-            vpnToggle.classList.remove('active');
-        }
-    }
-
-    vpnToggle.addEventListener('click', function() {
-        console.log("Переключение VPN");
-        const newState = !vpnToggle.classList.contains('active');
-        chrome.runtime.sendMessage({action: "toggleVPN", isEnabled: newState}, function(response) {
-            console.log("Ответ на переключение VPN:", response);
-            if (response && response.success) {
-                updateVpnButton(newState);
-                updateUI();
-            } else {
-                console.error("Ошибка при переключении VPN");
-            }
-        });
-    });
-
-    addSite.addEventListener('click', function() {
-        const site = newSite.value.trim();
-        console.log("Добавление сайта:", site);
-        if (site) {
-            chrome.runtime.sendMessage({action: "getVPNStatus"}, function(response) {
-                const sites = response.sites || [];
-                if (!sites.includes(site)) {
-                    sites.push(site);
-                    chrome.runtime.sendMessage({action: "updateSites", sites: sites}, function(response) {
-                        console.log("Ответ на обновление списка сайтов:", response);
-                        if (response && response.success) {
-                            updateUI();
-                            newSite.value = '';
-                        }
-                    });
-                }
-            });
-        }
-    });
-
-    saveProxySettings.addEventListener('click', function() {
-        const settings = {
-            host: proxyHost.value,
-            port: proxyPort.value,
-            username: proxyUsername.value,
-            password: proxyPassword.value
-        };
-        console.log("Сохранение настроек прокси:", settings);
-        chrome.runtime.sendMessage({action: "updateProxySettings", settings: settings}, function(response) {
-            console.log("Ответ на обновление настроек прокси:", response);
-            if (response && response.success) {
-                alert('Настройки прокси успешно обновлены.');
-                updateUI();
-            } else {
-                alert('Произошла ошибка при обновлении настроек прокси.');
-            }
-        });
-    });
-
-    function updateSiteList(sites) {
-        console.log("Обновление списка сайтов:", sites);
+    function updateSiteList() {
         siteList.innerHTML = '';
-        sites.forEach(function(site) {
+        currentSites.forEach(function(site) {
             const li = document.createElement('li');
             li.className = 'site-item';
             li.innerHTML = `
                 <span>${site}</span>
-                <button class="delete-btn">Удалить</button>
+                <button class="delete-btn">Delete</button>
             `;
             const deleteBtn = li.querySelector('.delete-btn');
             deleteBtn.onclick = function() {
-                const updatedSites = sites.filter(s => s !== site);
-                chrome.runtime.sendMessage({action: "updateSites", sites: updatedSites}, function(response) {
-                    console.log("Ответ на удаление сайта:", response);
-                    if (response && response.success) {
-                        updateUI();
-                    }
-                });
+                currentSites = currentSites.filter(s => s !== site);
+                updateBackendSites();
             };
             siteList.appendChild(li);
         });
     }
 
-    sitesTab.addEventListener('click', function() {
-        sitesTab.classList.add('active');
-        settingsTab.classList.remove('active');
-        sitesContent.style.display = 'block';
-        settingsContent.style.display = 'none';
+    function updateProxyList() {
+        proxyList.innerHTML = '';
+        currentProxyServers.forEach(function(proxy, index) {
+            const li = document.createElement('li');
+            li.className = 'site-item';
+            li.innerHTML = `
+                <span>${proxy.host}:${proxy.port}</span>
+                <button class="delete-btn">Delete</button>
+                <button class="toggle-btn ${index === currentActiveProxyIndex ? 'active' : ''}">
+                    ${index === currentActiveProxyIndex ? 'Deactivate' : 'Activate'}
+                </button>
+            `;
+            const deleteBtn = li.querySelector('.delete-btn');
+            deleteBtn.onclick = function() {
+                currentProxyServers = currentProxyServers.filter((_, i) => i !== index);
+                if (index === currentActiveProxyIndex) {
+                    currentActiveProxyIndex = -1;
+                } else if (index < currentActiveProxyIndex) {
+                    currentActiveProxyIndex--;
+                }
+                updateBackendProxyServers();
+            };
+            const toggleBtn = li.querySelector('.toggle-btn');
+            toggleBtn.onclick = function() {
+                if (index === currentActiveProxyIndex) {
+                    currentActiveProxyIndex = -1;
+                } else {
+                    currentActiveProxyIndex = index;
+                }
+                updateBackendProxyServers();
+            };
+            proxyList.appendChild(li);
+        });
+    }
+
+    function updateBackendSites() {
+        chrome.runtime.sendMessage({action: "updateSites", sites: currentSites}, function(response) {
+            if (response && response.success) {
+                updateUI();
+            }
+        });
+    }
+
+    function updateBackendProxyServers() {
+        chrome.runtime.sendMessage({
+            action: "updateProxyServers", 
+            proxyServers: currentProxyServers,
+            activeProxyIndex: currentActiveProxyIndex
+        }, function(response) {
+            if (response && response.success) {
+                updateUI();
+            }
+        });
+    }
+
+    function formatSite(site) {
+        try {
+            if (!/^https?:\/\//i.test(site)) {
+                site = 'http://' + site;
+            }
+            const urlObject = new URL(site);
+            return urlObject.hostname;
+        } catch (error) {
+            console.error("Invalid URL:", site);
+            return site;
+        }
+    }
+
+    vpnToggle.addEventListener('click', function() {
+        const newState = !vpnToggle.classList.contains('active');
+        chrome.runtime.sendMessage({action: "toggleVPN", isEnabled: newState}, function(response) {
+            if (response && response.success) {
+                updateUI();
+            }
+        });
     });
 
-    settingsTab.addEventListener('click', function() {
-        settingsTab.classList.add('active');
+    addSite.addEventListener('click', function() {
+        const site = formatSite(newSite.value.trim());
+        if (site && !currentSites.includes(site)) {
+            currentSites.push(site);
+            updateBackendSites();
+            newSite.value = '';
+        }
+    });
+
+    addProxy.addEventListener('click', function() {
+        const host = proxyHost.value.trim();
+        const port = proxyPort.value.trim();
+        const username = proxyUsername.value.trim();
+        const password = proxyPassword.value.trim();
+        if (host && port) {
+            currentProxyServers.push({host, port, username, password});
+            updateBackendProxyServers();
+            proxyHost.value = '';
+            proxyPort.value = '';
+            proxyUsername.value = '';
+            proxyPassword.value = '';
+        }
+    });
+
+    exportSites.addEventListener('click', function() {
+        const blob = new Blob([JSON.stringify(currentSites)], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'ftube_vpn_sites.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+
+    importSites.addEventListener('change', function(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedSites = JSON.parse(e.target.result);
+                    if (Array.isArray(importedSites)) {
+                        currentSites = [...new Set([...currentSites, ...importedSites.map(formatSite)])];
+                        updateBackendSites();
+                    }
+                } catch (error) {
+                    console.error("Error importing sites:", error);
+                }
+            };
+            reader.readAsText(file);
+        }
+    });
+
+    sitesTab.addEventListener('click', function() {
+        sitesTab.classList.add('active');
+        proxyTab.classList.remove('active');
+        sitesContent.style.display = 'block';
+        proxyContent.style.display = 'none';
+    });
+
+    proxyTab.addEventListener('click', function() {
+        proxyTab.classList.add('active');
         sitesTab.classList.remove('active');
-        settingsContent.style.display = 'block';
+        proxyContent.style.display = 'block';
         sitesContent.style.display = 'none';
     });
 
@@ -152,6 +218,5 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     updateUI();
-
     setInterval(updateUI, 1000);
 });

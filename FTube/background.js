@@ -1,6 +1,7 @@
 let isEnabled = false;
 let sites = [];
-let proxySettings = null;
+let proxyServers = [];
+let activeProxyIndex = -1;
 let totalTraffic = 0;
 let sessionTraffic = 0;
 let lastRequestTime = Date.now();
@@ -9,11 +10,12 @@ let bytesInLastSecond = 0;
 
 function loadSettings() {
     return new Promise((resolve) => {
-        chrome.storage.local.get(['isEnabled', 'sites', 'proxySettings', 'totalTraffic'], function(data) {
-            console.log("Загруженные данные:", data);
+        chrome.storage.local.get(['isEnabled', 'sites', 'proxyServers', 'activeProxyIndex', 'totalTraffic'], function(data) {
+            console.log("Loaded data:", data);
             isEnabled = data.isEnabled || false;
             sites = data.sites || [];
-            proxySettings = data.proxySettings || null;
+            proxyServers = data.proxyServers || [];
+            activeProxyIndex = data.activeProxyIndex || -1;
             totalTraffic = data.totalTraffic || 0;
             resolve();
         });
@@ -22,20 +24,26 @@ function loadSettings() {
 
 function saveSettings() {
     return new Promise((resolve) => {
-        const data = { isEnabled, sites, proxySettings, totalTraffic };
+        const data = { isEnabled, sites, proxyServers, activeProxyIndex, totalTraffic };
         chrome.storage.local.set(data, function() {
-            console.log("Данные сохранены:", data);
+            console.log("Data saved:", data);
             resolve();
         });
     });
 }
 
 function generatePacScript() {
+    if (activeProxyIndex === -1 || !proxyServers[activeProxyIndex]) {
+        return 'function FindProxyForURL(url, host) { return "DIRECT"; }';
+    }
+
+    const activeProxy = proxyServers[activeProxyIndex];
     const sitePatterns = sites.map(site => `shExpMatch(url, "*://*.${site}/*") || shExpMatch(url, "*://${site}/*")`).join(' || ');
+    
     return `
         function FindProxyForURL(url, host) {
             if (${sitePatterns}) {
-                return "PROXY ${proxySettings.host}:${proxySettings.port}";
+                return "PROXY ${activeProxy.host}:${activeProxy.port}";
             }
             return "DIRECT";
         }
@@ -43,7 +51,7 @@ function generatePacScript() {
 }
 
 async function updateProxySettings() {
-    if (isEnabled && proxySettings && sites.length > 0) {
+    if (isEnabled && activeProxyIndex !== -1 && proxyServers[activeProxyIndex] && sites.length > 0) {
         const pacScript = generatePacScript();
         const config = {
             mode: "pac_script",
@@ -54,16 +62,16 @@ async function updateProxySettings() {
 
         try {
             await chrome.proxy.settings.set({value: config, scope: "regular"});
-            console.log("PAC script успешно установлен");
+            console.log("PAC script successfully set");
         } catch (error) {
-            console.error("Ошибка при установке PAC script:", error);
+            console.error("Error setting PAC script:", error);
         }
     } else {
         try {
             await chrome.proxy.settings.clear({scope: "regular"});
-            console.log("Настройки прокси очищены");
+            console.log("Proxy settings cleared");
         } catch (error) {
-            console.error("Ошибка при очистке настроек прокси:", error);
+            console.error("Error clearing proxy settings:", error);
         }
     }
 }
@@ -73,7 +81,6 @@ chrome.webRequest.onBeforeRequest.addListener(
         if (isEnabled && sites.some(site => details.url.includes(site))) {
             const now = Date.now();
             if (now - lastRequestTime >= 1000) {
-                // Прошла секунда, обновляем скорость
                 const speed = (bytesInLastSecond * 8) / (1024 * 1024); // Mbps
                 chrome.runtime.sendMessage({action: "updateSpeed", speed: speed});
                 requestsInLastSecond = 0;
@@ -89,10 +96,7 @@ chrome.webRequest.onBeforeRequest.addListener(
 chrome.webRequest.onCompleted.addListener(
     function(details) {
         if (isEnabled && sites.some(site => details.url.includes(site))) {
-            // Примерный подсчет трафика на основе размера запроса и ответа
-            const requestSize = details.requestHeaders ? JSON.stringify(details.requestHeaders).length : 0;
-            const responseSize = details.responseHeaders ? JSON.stringify(details.responseHeaders).length : 0;
-            const estimatedSize = requestSize + responseSize + 1024; // Добавляем 1KB как примерную оценку тела ответа
+            const estimatedSize = details.responseSize || 1024; // Use responseSize if available, otherwise estimate
 
             totalTraffic += estimatedSize;
             sessionTraffic += estimatedSize;
@@ -107,42 +111,44 @@ chrome.webRequest.onCompleted.addListener(
             saveSettings();
         }
     },
-    {urls: ["<all_urls>"]},
-    ["responseHeaders"]
+    {urls: ["<all_urls>"]}
 );
 
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
-    console.log("Получено сообщение:", request);
+    console.log("Message received:", request);
     switch (request.action) {
         case "toggleVPN":
             isEnabled = request.isEnabled;
-            console.log("Переключение VPN. Новое состояние:", isEnabled);
+            console.log("VPN toggled. New state:", isEnabled);
             saveSettings().then(updateProxySettings).then(() => {
                 sendResponse({success: true});
             });
             return true;
         case "updateSites":
             sites = request.sites;
-            console.log("Обновление списка сайтов:", sites);
+            console.log("Sites list updated:", sites);
             saveSettings().then(updateProxySettings).then(() => {
                 sendResponse({success: true});
             });
             return true;
-        case "updateProxySettings":
-            proxySettings = request.settings;
-            console.log("Обновление настроек прокси:", proxySettings);
+        case "updateProxyServers":
+            proxyServers = request.proxyServers;
+            activeProxyIndex = request.activeProxyIndex;
+            console.log("Proxy servers updated:", proxyServers);
+            console.log("Active proxy index:", activeProxyIndex);
             saveSettings().then(updateProxySettings).then(() => {
                 sendResponse({success: true});
             });
             return true;
         case "getVPNStatus":
-            console.log("Запрос статуса VPN");
+            console.log("VPN status requested");
             sendResponse({
                 isEnabled: isEnabled,
-                proxySettings: proxySettings,
-                totalTraffic: totalTraffic / (1024 * 1024), // в MB
-                sessionTraffic: sessionTraffic / (1024 * 1024), // в MB
-                speed: (bytesInLastSecond * 8) / (1024 * 1024), // в Mbps
+                proxyServers: proxyServers,
+                activeProxyIndex: activeProxyIndex,
+                totalTraffic: totalTraffic / (1024 * 1024), // in MB
+                sessionTraffic: sessionTraffic / (1024 * 1024), // in MB
+                speed: (bytesInLastSecond * 8) / (1024 * 1024), // in Mbps
                 sites: sites
             });
             return true;
@@ -150,11 +156,11 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
 });
 
 chrome.proxy.onProxyError.addListener(function(details) {
-    console.error("Ошибка прокси:", JSON.stringify(details));
+    console.error("Proxy error:", JSON.stringify(details));
 });
 
-// Загрузка настроек при запуске
+// Load settings on startup
 loadSettings().then(updateProxySettings);
 
-// Сохранение настроек каждые 5 минут
-setInterval(saveSettings, 1 * 60 * 1000);
+// Save settings every 5 minutes
+setInterval(saveSettings, 5 * 60 * 1000);

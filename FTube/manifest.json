@@ -1,13 +1,13 @@
 {
   "manifest_version": 3,
   "name": "FTube VPN",
-  "version": "1.0",
-  "description": "VPN расширение для определенных сайтов",
+  "version": "1.1",
+  "description": "VPN extension for specific sites with automatic domain detection",
   "permissions": [
     "storage",
     "proxy",
-    "declarativeNetRequest",
-    "webRequest"
+    "webRequest",
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "<all_urls>"
